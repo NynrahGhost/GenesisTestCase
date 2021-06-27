@@ -1,0 +1,5 @@
+{
+	"tokenLifespan": 10000,
+	"dataBaseRefreshRate": 1000,
+	"CoinApiKey": "B1DFCCBF-23FE-413C-A2D1-0F51B4894FE5"
+}
