@@ -11,7 +11,8 @@ var app = express();
 var options = JSON.parse(fs.readFileSync("options.json"));
 var dataBase = JSON.parse(fs.readFileSync("data.json"));
 var dataBaseUpdated = false;
-var tokens = []; //For authentication.
+var tokens = [];
+var tokensTimestamps = [];
 
 app.use(cookieParser());
 
@@ -29,16 +30,19 @@ app.get('/btcRate', async function(req, res) {
 	if(req.cookies !== null) {
 		if(tokens.includes(req.cookies['token'])) {
 			try {
-				let rate = await getRate();
-				res.send('Rate: '+ rate);
+				let btcRate = await getRate();
+				res.type('application/json');
+				res.send({rate: btcRate});
 			} catch (error) {
 				console.log(error);
 				res.status(500).send('Internal server error!');
 			}
 		} else {
+			res.status(401);
 			res.send("Not authorized!");
 		}
 	} else {
+		res.status(401);
 		res.send("Not authorized!");
 	}
 });
@@ -49,10 +53,11 @@ app.post('/user/login', function(req, res) {
 		if(crypto.createHash('sha256').update(req.query.password).digest('hex') === dataBase[req.query.email]) {
 			let token = crypto.randomBytes(64).toString('hex');
 			tokens.push(token);
-			res.cookie('token', token, {maxAge: options.tokenLifespan, httpOnly: true, secure: true});
+			tokensTimestamps.push(Date.now() + options.tokenLifespan);
+			res.cookie('token', token, {path: '/', maxAge: options.tokenLifespan, httpOnly: true, secure: true});
 			res.send('Logged in succesfully!');
 		} else {
-			res.send(crypto.createHash('sha256').update(req.query.password).digest('hex') + " HERE " + dataBase[req.query.email]); //Intentional to prevent guessing emails/
+			res.send("Invalid email or password!");
 		}
 	} else {
 		res.send("Invalid email or password!");
@@ -109,5 +114,43 @@ async function updateDataBase() {
 	setTimeout(updateDataBase, options.dataBaseRefreshRate);
 }
 
+async function refreshTokens() {
+	
+	let time = Date.now();
+			
+	switch(tokens.length) {
+		case 0:
+			break;
+		case 1:
+			if(tokensTimestamps[0] < time) {
+				tokensTimestamps = [];
+				tokens = [];
+				break;
+			}
+			break;
+		default:
+			let middle = tokens.length - 1;
+			if(tokensTimestamps[middle] < time) {
+				tokensTimestamps = [];
+				tokens = [];
+				break;
+			}
+			while(true) {
+				middle >>= 1;
+				if(tokensTimestamps[middle] < time) {
+					tokensTimestamps.slice(middle);
+					tokens.slice(middle);
+					break;
+				}
+				if(middle <= 0) {
+					break;
+				}
+			}
+			break;
+	}
+	setTimeout(refreshTokens, options.tokensRefreshRate);
+}
+
 //Start background process
 updateDataBase();
+refreshTokens();
